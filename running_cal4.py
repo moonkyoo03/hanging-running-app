@@ -1,0 +1,1669 @@
+# -*- coding: utf-8 -*-
+import calendar
+import hashlib
+import html
+import json
+import math
+import os
+import random
+from collections import defaultdict, OrderedDict
+from datetime import datetime, timedelta, time as dt_time
+
+import folium
+import plotly.graph_objects as go
+import requests
+import streamlit as st
+from streamlit_folium import st_folium
+
+# ──────────────────────────────────────────────────────────
+# 기본 설정
+# ──────────────────────────────────────────────────────────
+st.set_page_config(page_title="한강 러닝 루트 추천", layout="wide")
+
+st.markdown(
+    """
+    <style>
+    /* 모바일·좁은 화면 */
+    @media screen and (max-width: 768px) {
+        .block-container { padding-top: 0.75rem !important; padding-bottom: 0.75rem !important; }
+        div.element-container:has(.hangang-folium-marker) + div.element-container iframe {
+            height: 320px !important;
+            max-height: 42vh !important;
+            min-height: 240px !important;
+        }
+    }
+
+    /* 히어로 배너 */
+    .rj-hero {
+        background: linear-gradient(135deg, #0f766e 0%, #115e59 45%, #134e4a 100%);
+        color: #ecfeff;
+        padding: 1.25rem 1.35rem;
+        border-radius: 18px;
+        margin-bottom: 1rem;
+        box-shadow: 0 16px 40px rgba(15, 118, 110, 0.35);
+        border: 1px solid rgba(204, 251, 241, 0.25);
+    }
+    .rj-hero h2 { margin: 0 0 0.35rem 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
+    .rj-hero p { margin: 0; opacity: 0.92; font-size: 0.92rem; line-height: 1.45; }
+
+    /* 달력 래퍼 */
+    .rj-cal-wrap {
+        background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+        border-radius: 16px;
+        padding: 1rem 0.75rem 1.1rem;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        margin-bottom: 1rem;
+    }
+
+    /* 달력 요일 헤더 */
+    .rj-day-head {
+        text-align: center;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #64748b;
+        letter-spacing: 0.06em;
+        padding: 0.15rem 0 0.5rem;
+    }
+
+    /* ── 달력 날짜 셀 ── */
+    .cal-cell {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        min-height: 72px;          /* 세로 높이 증가 */
+        padding: 6px 4px 6px;
+        border-radius: 10px;
+        border: 1.5px solid #e2e8f0;
+        background: #ffffff;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        margin: 2px 1px;
+        box-shadow: 0 1px 4px rgba(15,23,42,0.04);
+        position: relative;
+        overflow: hidden;
+    }
+    .cal-cell:hover {
+        border-color: #0d9488;
+        box-shadow: 0 4px 12px rgba(13,148,136,0.18);
+        background: #f0fdfa;
+        transform: translateY(-1px);
+    }
+    .cal-cell.selected {
+        border-color: #0f766e;
+        background: linear-gradient(135deg, #ccfbf1, #f0fdfa);
+        box-shadow: 0 4px 16px rgba(15,118,110,0.22);
+    }
+    .cal-cell.today {
+        border-color: #2563eb;
+        background: #eff6ff;
+    }
+    .cal-cell.has-run {
+        border-color: #10b981;
+        background: linear-gradient(135deg, #ecfdf5, #f0fdf4);
+    }
+    .cal-cell-day {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #1e293b;
+        line-height: 1.2;
+    }
+    .cal-cell-day.sun { color: #dc2626; }
+    .cal-cell-day.sat { color: #2563eb; }
+    .cal-cell-day.today-label { color: #1d4ed8; }
+    .cal-cell-pace {
+        font-size: 0.62rem;
+        color: #0f766e;
+        font-weight: 600;
+        margin-top: 3px;
+        line-height: 1.2;
+        text-align: center;
+        white-space: nowrap;
+    }
+    .cal-cell-km {
+        font-size: 0.65rem;
+        color: #059669;
+        font-weight: 700;
+        margin-top: 2px;
+        line-height: 1.2;
+    }
+    .cal-today-dot {
+        width: 5px; height: 5px;
+        border-radius: 50%;
+        background: #2563eb;
+        margin-top: 2px;
+    }
+    .cal-run-dot {
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: #10b981;
+        margin-top: 2px;
+    }
+    .cal-empty {
+        min-height: 72px;
+        margin: 2px 1px;
+    }
+
+    /* 회원가입 완료 모달 */
+    .signup-modal-overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .signup-modal {
+        background: #ffffff;
+        border-radius: 20px;
+        padding: 2.5rem 2rem;
+        max-width: 380px;
+        width: 90%;
+        text-align: center;
+        box-shadow: 0 25px 60px rgba(0,0,0,0.25);
+        animation: popIn 0.35s ease;
+    }
+    @keyframes popIn {
+        from { opacity: 0; transform: scale(0.85) translateY(20px); }
+        to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .signup-modal .check-icon {
+        font-size: 3.5rem;
+        margin-bottom: 0.75rem;
+    }
+    .signup-modal h3 {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: #0f766e;
+        margin: 0 0 0.5rem;
+    }
+    .signup-modal p {
+        font-size: 0.9rem;
+        color: #475569;
+        margin: 0 0 1.25rem;
+    }
+
+    /* 친구 카드 */
+    .friend-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 0.5rem;
+        box-shadow: 0 2px 8px rgba(15,23,42,0.05);
+    }
+    .friend-avatar {
+        width: 40px; height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #0f766e, #14b8a6);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.1rem; font-weight: 700; color: white;
+        flex-shrink: 0;
+    }
+    .friend-info { flex: 1; }
+    .friend-name { font-weight: 700; font-size: 0.92rem; color: #1e293b; }
+    .friend-stats { font-size: 0.78rem; color: #64748b; margin-top: 2px; }
+
+    /* 로그인 화면 스타일 */
+    .login-container {
+        max-width: 420px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem;
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.12);
+        border: 1px solid #e2e8f0;
+    }
+    .login-title {
+        text-align: center;
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: #0f766e;
+        margin-bottom: 0.25rem;
+    }
+    .login-sub {
+        text-align: center;
+        font-size: 0.88rem;
+        color: #64748b;
+        margin-bottom: 1.5rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ──────────────────────────────────────────────────────────
+# 상수
+# ──────────────────────────────────────────────────────────
+HANGANG_PARKS = [
+    ("여의도한강공원", 37.5271, 126.9326),
+    ("반포한강공원",   37.5096, 126.9945),
+    ("뚝섬한강공원",   37.5293, 127.0720),
+    ("잠실한강공원",   37.5188, 127.0875),
+    ("망원한강공원",   37.5555, 126.8976),
+    ("이촌한강공원",   37.5226, 126.9722),
+    ("난지한강공원",   37.5667, 126.8765),
+]
+
+HANGANG_LANDMARKS = [
+    ("한강대교 남단",     37.5186, 126.9641),
+    ("마포대교 북단",     37.5390, 126.9477),
+    ("원효대교 북단",     37.5353, 126.9568),
+    ("반포대교 북단",     37.5148, 126.9987),
+    ("동작대교 북단",     37.5087, 126.9807),
+    ("잠수교 북단",       37.5126, 126.9996),
+    ("성수대교 북단",     37.5373, 127.0558),
+    ("영동대교 북단",     37.5295, 127.0637),
+    ("잠실대교 북단",     37.5221, 127.0857),
+    ("세빛섬",            37.5073, 126.9977),
+    ("노들섬",            37.5170, 126.9600),
+    ("선유도공원",        37.5382, 126.8986),
+    ("서울마리나",        37.5302, 126.8832),
+    ("여의나루역",        37.5280, 126.9337),
+    ("뚝섬유원지역",      37.5306, 127.0668),
+    ("잠실나루역",        37.5181, 127.0832),
+    ("반포 수상택시 승강장", 37.5089, 126.9971),
+    ("이촌 한강 수영장",     37.5191, 126.9693),
+    ("뚝섬 자전거공원",      37.5303, 127.0735),
+    ("망원 수변무대",        37.5563, 126.8989),
+    ("여의도 물빛광장",      37.5261, 126.9290),
+    ("잠실 수상스키장",      37.5200, 127.0910),
+    ("광나루 자전거공원",    37.5447, 127.1092),
+    ("암사 생태공원",        37.5540, 127.1337),
+]
+
+HANGANG_SPOTS = HANGANG_PARKS + HANGANG_LANDMARKS
+
+PARK_FACILITIES = {
+    "여의도한강공원": {
+        "difficulty": "쉬움", "surface": "아스팔트 + 자전거도로 주의",
+        "facilities": ["화장실 다수", "편의점 CU·GS", "자전거 대여소", "음수대"],
+        "tip": "여의도 순환 코스로 5.5km 루프 가능",
+    },
+    "반포한강공원": {
+        "difficulty": "쉬움", "surface": "포장 트랙, 평탄",
+        "facilities": ["화장실", "세빛섬 카페", "음수대"],
+        "tip": "달빛무지개분수 야간 러닝 명소",
+    },
+    "뚝섬한강공원": {
+        "difficulty": "보통", "surface": "포장 + 일부 잔디",
+        "facilities": ["화장실", "뚝섬유원지역 근접", "샤워시설"],
+        "tip": "강 조망 구간이 길어 페이스런에 적합",
+    },
+    "잠실한강공원": {
+        "difficulty": "보통", "surface": "포장 트랙",
+        "facilities": ["화장실", "편의점", "운동시설"],
+        "tip": "잠실대교~올림픽대교 구간 직선 코스",
+    },
+    "망원한강공원": {
+        "difficulty": "쉬움", "surface": "포장, 넓은 광장",
+        "facilities": ["화장실", "음수대", "농구장"],
+        "tip": "노을공원 연계 언덕 코스 도전 가능",
+    },
+    "이촌한강공원": {
+        "difficulty": "쉬움", "surface": "포장, 평탄",
+        "facilities": ["화장실", "자전거도로 병행"],
+        "tip": "국립중앙박물관 방면 산책로 연계",
+    },
+    "난지한강공원": {
+        "difficulty": "어려움", "surface": "언덕 구간 포함",
+        "facilities": ["화장실", "캠핑장"],
+        "tip": "하늘공원 계단 업힐 훈련에 최적",
+    },
+}
+
+HANGANG_CENTER = (37.53, 126.98)
+OSRM_URL = "https://router.project-osrm.org/route/v1/foot"
+WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
+TIMEOUT_ROUTE = 5
+TIMEOUT_INFO = 8
+
+USERS_FILE = "users.json"
+DIFFICULTY_COLOR = {"쉬움": "🟢", "보통": "🟡", "어려움": "🔴"}
+
+WMO_ICON = {
+    0: ("맑음", "☀️"), 1: ("대체로 맑음", "🌤️"), 2: ("구름 조금", "⛅"),
+    3: ("흐림", "☁️"), 45: ("안개", "🌫️"), 48: ("안개", "🌫️"),
+    51: ("이슬비", "🌦️"), 53: ("이슬비", "🌦️"), 55: ("이슬비", "🌦️"),
+    61: ("비", "🌧️"), 63: ("비", "🌧️"), 65: ("강한 비", "🌧️"),
+    71: ("눈", "❄️"), 73: ("눈", "❄️"), 75: ("강한 눈", "❄️"),
+    80: ("소나기", "🌦️"), 81: ("소나기", "🌦️"), 95: ("뇌우", "⛈️"),
+}
+
+INDOOR_ALTERNATIVES = [
+    "실내 트레드밀 30분 + 가벼운 스트레칭",
+    "홈트 유산소 20분 + 하체 보강 10분",
+    "실내 자전거 40분",
+    "가벼운 코어 운동 + 걷기 대체",
+]
+
+# ──────────────────────────────────────────────────────────
+# 유틸
+# ──────────────────────────────────────────────────────────
+def hash_pw(pw: str) -> str:
+    return hashlib.sha256(pw.encode()).hexdigest()
+
+
+def haversine_km(lat1, lon1, lat2, lon2):
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dlat = p2 - p1
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlon / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def pace_to_string(minutes_per_km):
+    if not minutes_per_km or minutes_per_km <= 0:
+        return "-"
+    total_sec = int(round(minutes_per_km * 60))
+    return f"{total_sec // 60}:{total_sec % 60:02d}/km"
+
+
+def pace_to_minutes(pace_str):
+    try:
+        parts = pace_str.replace("/km", "").split(":")
+        return int(parts[0]) + int(parts[1]) / 60
+    except Exception:
+        return None
+
+
+def estimate_calories(weight_kg, distance_km):
+    if weight_kg <= 0 or distance_km <= 0:
+        return 0
+    return round(weight_kg * distance_km)
+
+
+def wmo_label(code):
+    if code is None:
+        return ("알 수 없음", "❓")
+    return WMO_ICON.get(int(code), ("흐림", "☁️"))
+
+
+def weather_category(temperature, pm25, wcode):
+    if wcode is not None and int(wcode) >= 61:
+        return "비/눈"
+    if temperature is not None and temperature >= 28:
+        return "더운 날"
+    if temperature is not None and temperature <= 3:
+        return "추운 날"
+    if pm25 is not None and pm25 > 35:
+        return "미세먼지"
+    return "맑음/쾌청"
+
+
+# ──────────────────────────────────────────────────────────
+# 로그인 / 사용자 관리
+# ──────────────────────────────────────────────────────────
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        return {}
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_users(users):
+    try:
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(users, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def register_user(username, password):
+    users = load_users()
+    if username in users:
+        return False, "이미 존재하는 아이디입니다."
+    if len(username) < 2:
+        return False, "아이디는 2자 이상이어야 합니다."
+    if len(password) < 4:
+        return False, "비밀번호는 4자 이상이어야 합니다."
+    users[username] = {"pw": hash_pw(password), "friends": []}
+    save_users(users)
+    return True, "회원가입 완료!"
+
+
+def login_user(username, password):
+    users = load_users()
+    if username not in users:
+        return False, "존재하지 않는 아이디입니다."
+    stored = users[username]
+    # 구버전 호환: 문자열로 저장된 경우
+    pw_hash = stored if isinstance(stored, str) else stored.get("pw", "")
+    if pw_hash != hash_pw(password):
+        return False, "비밀번호가 틀렸습니다."
+    return True, "로그인 성공!"
+
+
+# ──────────────────────────────────────────────────────────
+# 친구 관리
+# ──────────────────────────────────────────────────────────
+def get_friends(username):
+    users = load_users()
+    u = users.get(username, {})
+    if isinstance(u, str):
+        return []
+    return u.get("friends", [])
+
+
+def add_friend(username, friend_id):
+    users = load_users()
+    if friend_id not in users:
+        return False, "존재하지 않는 사용자입니다."
+    if friend_id == username:
+        return False, "자기 자신은 친구 추가할 수 없습니다."
+    u = users.get(username, {})
+    if isinstance(u, str):
+        users[username] = {"pw": u, "friends": []}
+        u = users[username]
+    friends = u.get("friends", [])
+    if friend_id in friends:
+        return False, "이미 친구입니다."
+    friends.append(friend_id)
+    u["friends"] = friends
+    users[username] = u
+    save_users(users)
+    return True, f"{friend_id}님을 친구로 추가했습니다!"
+
+
+def remove_friend(username, friend_id):
+    users = load_users()
+    u = users.get(username, {})
+    if isinstance(u, str):
+        return
+    friends = u.get("friends", [])
+    if friend_id in friends:
+        friends.remove(friend_id)
+    u["friends"] = friends
+    users[username] = u
+    save_users(users)
+
+
+# ──────────────────────────────────────────────────────────
+# JSON I/O (유저별)
+# ──────────────────────────────────────────────────────────
+def _load_json(path, default):
+    if not os.path.exists(path):
+        return default
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def _save_json(path, data):
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def history_path(username):
+    return f"history_{username}.json"
+
+
+def favorites_path(username):
+    return f"favorites_{username}.json"
+
+
+def goal_path(username):
+    return f"goal_{username}.json"
+
+
+def load_history(username):
+    return _load_json(history_path(username), [])
+
+
+def save_history(username, entry):
+    h = load_history(username)
+    h.insert(0, entry)
+    _save_json(history_path(username), h[:50])
+
+
+def load_favorites(username):
+    return _load_json(favorites_path(username), [])
+
+
+def save_favorite(username, entry):
+    f = load_favorites(username)
+    f.insert(0, entry)
+    _save_json(favorites_path(username), f[:10])
+
+
+def delete_favorite(username, idx):
+    f = load_favorites(username)
+    if 0 <= idx < len(f):
+        f.pop(idx)
+    _save_json(favorites_path(username), f)
+
+
+def load_goal(username):
+    return _load_json(goal_path(username), {"monthly_km": 50.0})
+
+
+def save_goal(username, goal_km):
+    _save_json(goal_path(username), {"monthly_km": goal_km})
+
+
+# ──────────────────────────────────────────────────────────
+# 외부 API
+# ──────────────────────────────────────────────────────────
+def get_current_weather():
+    lat, lon = HANGANG_CENTER
+    advice = {
+        "temperature": None, "pm10": None, "pm25": None,
+        "precipitation": None, "recommend": None, "wcode": None,
+        "message": "날씨 정보를 가져오지 못했습니다.",
+    }
+    try:
+        wr = requests.get(WEATHER_URL, params={
+            "latitude": lat, "longitude": lon,
+            "current": "temperature_2m,precipitation,weathercode",
+        }, timeout=TIMEOUT_INFO)
+        wr.raise_for_status()
+        weather = wr.json().get("current", {})
+
+        ar = requests.get(AIR_QUALITY_URL, params={
+            "latitude": lat, "longitude": lon, "current": "pm10,pm2_5",
+        }, timeout=TIMEOUT_INFO)
+        ar.raise_for_status()
+        air = ar.json().get("current", {})
+
+        t = weather.get("temperature_2m")
+        prec = weather.get("precipitation", 0)
+        wcode = weather.get("weathercode")
+        pm10 = air.get("pm10")
+        pm25 = air.get("pm2_5")
+        advice.update({"temperature": t, "pm10": pm10, "pm25": pm25,
+                        "precipitation": prec, "wcode": wcode})
+
+        bad, reasons = False, []
+        if t is not None and (t < -5 or t > 32):
+            bad = True; reasons.append("기온이 극단적")
+        if prec is not None and prec > 0.5:
+            bad = True; reasons.append("비")
+        if pm10 is not None and pm10 > 80:
+            bad = True; reasons.append("미세먼지 높음")
+        if pm25 is not None and pm25 > 35:
+            bad = True; reasons.append("초미세먼지 높음")
+
+        advice["recommend"] = not bad
+        advice["message"] = ("오늘은 러닝 비추천 (" + ", ".join(reasons) + ")"
+                              if bad else "오늘은 러닝 추천 👍")
+    except Exception:
+        pass
+    return advice
+
+
+def get_7day_forecast():
+    lat, lon = HANGANG_CENTER
+    try:
+        res = requests.get(WEATHER_URL, params={
+            "latitude": lat, "longitude": lon,
+            "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode",
+            "forecast_days": 7, "timezone": "Asia/Seoul",
+        }, timeout=TIMEOUT_INFO)
+        res.raise_for_status()
+        daily = res.json().get("daily", {})
+        return list(zip(
+            daily.get("time", []),
+            daily.get("temperature_2m_max", []),
+            daily.get("temperature_2m_min", []),
+            daily.get("precipitation_sum", []),
+            daily.get("weathercode", []),
+        ))
+    except Exception:
+        return []
+
+
+def is_good_running_day(tmax, tmin, prec, wcode):
+    if tmax is None or tmin is None:
+        return False
+    avg_t = (tmax + tmin) / 2
+    if avg_t < -5 or avg_t > 32:
+        return False
+    if prec is not None and prec > 2.0:
+        return False
+    if wcode is not None and int(wcode) >= 61:
+        return False
+    return True
+
+
+# ──────────────────────────────────────────────────────────
+# OSRM 경로
+# ──────────────────────────────────────────────────────────
+def osrm_route(coords):
+    try:
+        coord_str = ";".join([f"{lon},{lat}" for lat, lon in coords])
+        res = requests.get(
+            f"{OSRM_URL}/{coord_str}",
+            params={"overview": "full", "geometries": "geojson"},
+            timeout=TIMEOUT_ROUTE,
+        )
+        res.raise_for_status()
+        data = res.json()
+        if data.get("code") != "Ok" or not data.get("routes"):
+            return None, None
+        route = data["routes"][0]
+        return route["distance"], route["geometry"]["coordinates"]
+    except Exception:
+        return None, None
+
+
+def generate_random_route(target_km, route_mode, tolerance_ratio=0.08, max_try=30):
+    target_m = target_km * 1000.0
+    best, best_diff = None, float("inf")
+
+    for attempt in range(max_try):
+        random.seed(st.session_state.get("seed", 0) + attempt * 37 + int(target_km * 100))
+        point_count = random.randint(2, min(6, len(HANGANG_SPOTS)))
+        start = random.choice(HANGANG_PARKS)
+        remaining = [s for s in HANGANG_SPOTS if s != start]
+        random.shuffle(remaining)
+        waypoints = [start] + remaining[:point_count - 1]
+        random.shuffle(waypoints[1:])
+
+        route_points = [(s[1], s[2]) for s in waypoints]
+        if route_mode == "왕복":
+            route_points.append((waypoints[0][1], waypoints[0][2]))
+
+        rough_km = sum(
+            haversine_km(route_points[i][0], route_points[i][1],
+                         route_points[i+1][0], route_points[i+1][1])
+            for i in range(len(route_points) - 1)
+        )
+        if rough_km < target_km * 0.4 or rough_km > target_km * 2.0:
+            continue
+
+        dist_m, line = osrm_route(route_points)
+        if dist_m is None:
+            continue
+
+        diff = abs(dist_m - target_m)
+        if diff < best_diff:
+            best_diff = diff
+            best = {"dist_m": dist_m, "line": line, "spots": waypoints}
+
+        if diff <= target_m * tolerance_ratio:
+            break
+
+    return best
+
+
+# ──────────────────────────────────────────────────────────
+# 지도
+# ──────────────────────────────────────────────────────────
+def build_map(result=None):
+    m = folium.Map(location=list(HANGANG_CENTER), zoom_start=12, tiles="CartoDB positron")
+    if result:
+        latlon_line = [(lat, lon) for lon, lat in result["line"]]
+        folium.PolyLine(latlon_line, color="red", weight=6, opacity=0.9).add_to(m)
+    return m
+
+
+# ──────────────────────────────────────────────────────────
+# 통계 유틸
+# ──────────────────────────────────────────────────────────
+def calc_streak(history):
+    if not history:
+        return 0, 0
+    run_dates = set()
+    for h in history:
+        try:
+            dt = datetime.strptime(h["saved_at"], "%Y-%m-%d %H:%M:%S")
+            run_dates.add(dt.date())
+        except Exception:
+            pass
+    if not run_dates:
+        return 0, 0
+    today = datetime.now().date()
+    current_streak = 0
+    check = today
+    while check in run_dates:
+        current_streak += 1
+        check -= timedelta(days=1)
+    if current_streak == 0:
+        check = today - timedelta(days=1)
+        while check in run_dates:
+            current_streak += 1
+            check -= timedelta(days=1)
+    sorted_dates = sorted(run_dates, reverse=True)
+    best_streak, temp = 1, 1
+    for i in range(1, len(sorted_dates)):
+        if (sorted_dates[i-1] - sorted_dates[i]).days == 1:
+            temp += 1
+            best_streak = max(best_streak, temp)
+        else:
+            temp = 1
+    return current_streak, best_streak
+
+
+def this_month_dist(history):
+    now = datetime.now()
+    total = 0.0
+    for h in history:
+        try:
+            dt = datetime.strptime(h["saved_at"], "%Y-%m-%d %H:%M:%S")
+            if dt.year == now.year and dt.month == now.month:
+                total += h.get("distance_km", 0)
+        except Exception:
+            pass
+    return round(total, 2)
+
+
+def analyze_weather_pace(history):
+    category_paces = defaultdict(list)
+    for h in history:
+        p = pace_to_minutes(h.get("pace", ""))
+        snap = h.get("weather_snapshot", {})
+        if p and snap:
+            cat = weather_category(snap.get("temperature"), snap.get("pm25"), snap.get("wcode"))
+            category_paces[cat].append(p)
+    return {cat: sum(paces) / len(paces) for cat, paces in category_paces.items()}
+
+
+def group_history_by_date(history):
+    date_groups = OrderedDict()
+    for item in history:
+        try:
+            date_key = item["saved_at"][:10]
+            if date_key not in date_groups:
+                date_groups[date_key] = []
+            date_groups[date_key].append(item)
+        except Exception:
+            pass
+    return date_groups
+
+
+def build_chart_data(history):
+    if not history:
+        return None
+    total_dist = sum(h.get("distance_km", 0) for h in history)
+    total_cal = sum(h.get("calories_kcal", 0) for h in history)
+    weekly = defaultdict(float)
+    for h in history:
+        try:
+            dt = datetime.strptime(h["saved_at"], "%Y-%m-%d %H:%M:%S")
+            weekly[dt.strftime("%m/%d")] += h.get("distance_km", 0)
+        except Exception:
+            pass
+    sorted_weeks = sorted(weekly.items())[-8:]
+    paces, dates = [], []
+    for h in reversed(history[-10:]):
+        p = pace_to_minutes(h.get("pace", ""))
+        if p:
+            paces.append(p)
+            dates.append(h["saved_at"][:10])
+    return {
+        "total_dist": total_dist, "total_cal": total_cal, "run_count": len(history),
+        "week_labels": [w[0] for w in sorted_weeks],
+        "week_vals": [w[1] for w in sorted_weeks],
+        "pace_dates": dates, "pace_vals": paces,
+    }
+
+
+# ──────────────────────────────────────────────────────────
+# 세션 초기화
+# ──────────────────────────────────────────────────────────
+for k, v in [
+    ("user", None), ("seed", 0), ("last_result", None),
+    ("saved_last", False), ("show_register", False),
+    ("register_success", False), ("register_username", ""),
+]:
+    if k not in st.session_state:
+        st.session_state[k] = v
+
+# ══════════════════════════════════════════════════════════
+# 로그인 화면
+# ══════════════════════════════════════════════════════════
+if not st.session_state["user"]:
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_c = st.columns([1, 2, 1])[1]
+
+    with col_c:
+        st.markdown(
+            """
+            <div style='text-align:center; margin-bottom:1.5rem;'>
+                <div style='font-size:3rem;'>🏃</div>
+                <div style='font-size:1.6rem; font-weight:800; color:#0f766e;'>한강 러닝</div>
+                <div style='font-size:0.9rem; color:#64748b; margin-top:0.25rem;'>루트 추천 & 러닝 기록 앱</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # 회원가입 완료 모달
+        if st.session_state["register_success"]:
+            st.markdown(
+                f"""
+                <div style='background:linear-gradient(135deg,#ecfdf5,#d1fae5);
+                     border:2px solid #10b981; border-radius:18px; padding:1.75rem 1.5rem;
+                     text-align:center; margin-bottom:1.25rem;
+                     box-shadow: 0 8px 30px rgba(16,185,129,0.2);'>
+                    <div style='font-size:3rem; margin-bottom:0.5rem;'>🎉</div>
+                    <div style='font-size:1.25rem; font-weight:800; color:#065f46; margin-bottom:0.4rem;'>
+                        회원가입 완료!
+                    </div>
+                    <div style='font-size:0.92rem; color:#047857; margin-bottom:0.2rem;'>
+                        <b>{html.escape(st.session_state["register_username"])}</b>님, 환영합니다 👋
+                    </div>
+                    <div style='font-size:0.85rem; color:#6b7280; margin-top:0.5rem;'>
+                        아래에서 로그인하여 시작하세요!
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if st.button("✓ 확인", type="primary", use_container_width=True):
+                st.session_state["register_success"] = False
+                st.rerun()
+
+        if not st.session_state["show_register"]:
+            # 로그인
+            st.markdown("#### 로그인")
+            login_id = st.text_input("아이디", key="login_id", placeholder="아이디를 입력하세요")
+            login_pw = st.text_input("비밀번호", type="password", key="login_pw", placeholder="비밀번호를 입력하세요")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔐 로그인", type="primary", use_container_width=True):
+                    ok, msg = login_user(login_id, login_pw)
+                    if ok:
+                        st.session_state["user"] = login_id
+                        st.session_state["register_success"] = False
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            with col2:
+                if st.button("✏️ 회원가입", use_container_width=True):
+                    st.session_state["show_register"] = True
+                    st.session_state["register_success"] = False
+                    st.rerun()
+        else:
+            # 회원가입
+            st.markdown("#### 회원가입")
+            reg_id = st.text_input("아이디 (2자 이상)", key="reg_id", placeholder="사용할 아이디")
+            reg_pw = st.text_input("비밀번호 (4자 이상)", type="password", key="reg_pw", placeholder="비밀번호")
+            reg_pw2 = st.text_input("비밀번호 확인", type="password", key="reg_pw2", placeholder="비밀번호 재입력")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ 가입하기", type="primary", use_container_width=True):
+                    if reg_pw != reg_pw2:
+                        st.error("비밀번호가 일치하지 않습니다.")
+                    else:
+                        ok, msg = register_user(reg_id, reg_pw)
+                        if ok:
+                            st.session_state["show_register"] = False
+                            st.session_state["register_success"] = True
+                            st.session_state["register_username"] = reg_id
+                            st.rerun()
+                        else:
+                            st.error(msg)
+            with col2:
+                if st.button("← 로그인으로", use_container_width=True):
+                    st.session_state["show_register"] = False
+                    st.rerun()
+
+    st.stop()
+
+# ══════════════════════════════════════════════════════════
+# 로그인 후 메인 앱
+# ══════════════════════════════════════════════════════════
+username = st.session_state["user"]
+
+# 상단 헤더
+header_col, logout_col = st.columns([5, 1])
+with header_col:
+    st.title("🏃 한강 러닝 루트 추천")
+with logout_col:
+    st.write("")
+    st.write(f"👤 **{username}**")
+    if st.button("로그아웃", use_container_width=True):
+        st.session_state["user"] = None
+        st.session_state["last_result"] = None
+        st.session_state["saved_last"] = False
+        st.rerun()
+
+# 현재 날씨
+weather = get_current_weather()
+if weather["recommend"] is True:
+    st.success(weather["message"])
+elif weather["recommend"] is False:
+    st.warning(weather["message"])
+else:
+    st.info(weather["message"])
+
+w1, w2, w3, w4 = st.columns(4)
+with w1:
+    if weather["temperature"] is not None:
+        st.metric("현재 기온", f"{weather['temperature']:.1f}°C")
+with w2:
+    if weather["pm10"] is not None:
+        st.metric("PM10", f"{weather['pm10']:.0f} µg/m³")
+with w3:
+    if weather["pm25"] is not None:
+        st.metric("PM2.5", f"{weather['pm25']:.0f} µg/m³")
+with w4:
+    if weather["precipitation"] is not None:
+        st.metric("강수", f"{weather['precipitation']:.1f} mm")
+
+# ──────────────────────────────────────────────────────────
+# 탭
+# ──────────────────────────────────────────────────────────
+tab_route, tab_weather, tab_journal, tab_stats, tab_favs, tab_friends = st.tabs([
+    "🗺️ 루트 추천", "🌤️ 7일 예보", "📓 러닝 기록", "📊 나의 통계", "⭐ 즐겨찾기", "👥 친구",
+])
+
+# ════════════════════════════════════════════════════════
+# 탭 1: 루트 추천
+# ════════════════════════════════════════════════════════
+with tab_route:
+    left, right = st.columns([1.2, 1])
+
+    with left:
+        st.subheader("루트 추천")
+        target_km = st.number_input("목표 거리 (km)", 2.0, 30.0, 8.0, 0.5, key="target_km")
+        route_mode = st.radio("루트 형태", ["왕복", "편도"], horizontal=True)
+        tolerance_pct = st.slider("거리 허용 오차 (%)", 3, 15, 8, 1)
+        user_level = st.selectbox("러닝 레벨", ["초급", "중급", "고급"])
+
+        base = {"초급": (3, 5), "중급": (5, 8), "고급": (8, 12)}[user_level]
+        suggest = round(random.uniform(*base), 1)
+        st.caption(f"오늘의 추천 거리: 약 {suggest} km")
+
+        if weather.get("recommend") is False:
+            st.info("실외 러닝이 부담스러우면 실내 대안을 고려해보세요.")
+            st.write("• " + random.choice(INDOOR_ALTERNATIVES))
+
+        if st.button("🎲 루트 생성", type="primary"):
+            with st.spinner("다양한 루트 조합 중..."):
+                st.session_state["seed"] += 1
+                st.session_state["last_result"] = generate_random_route(
+                    target_km=target_km,
+                    route_mode=route_mode,
+                    tolerance_ratio=tolerance_pct / 100.0,
+                    max_try=30,
+                )
+                st.session_state["saved_last"] = False
+
+    with right:
+        st.subheader("운동 계산기")
+        weight_kg = st.number_input("체중 (kg)", 30.0, 150.0, 65.0, 0.5)
+        target_time = st.number_input("목표 시간 (분)", 10, 300, 48, 1)
+        pace_val = target_time / target_km if target_km > 0 else None
+        calories = estimate_calories(weight_kg, target_km)
+        c1, c2 = st.columns(2)
+        c1.metric("예상 페이스", pace_to_string(pace_val))
+        c2.metric("예상 소모 칼로리", f"{calories} kcal")
+
+    result = st.session_state["last_result"]
+    st.divider()
+
+    map_col, info_col = st.columns([1.8, 1])
+    with map_col:
+        route_map = build_map(result)
+        st.markdown('<div class="hangang-folium-marker"></div>', unsafe_allow_html=True)
+        st_folium(route_map, width=1100, height=650, returned_objects=[])
+
+    with info_col:
+        st.subheader("추천 결과")
+        if result:
+            actual_km = result["dist_m"] / 1000
+            st.success(f"추천 루트: 약 {actual_km:.2f} km")
+
+            if pace_val:
+                st.write(f"⏱️ 예상 완주: 약 {int(round(actual_km * pace_val))}분")
+
+            st.divider()
+            st.subheader("기록 저장")
+            run_memo = st.text_input(
+                "한 줄 메모 (선택)",
+                placeholder="예: 컨디션 최상 / 바람이 시원했음",
+                key="run_memo",
+            )
+            wlabel, wicon = wmo_label(weather.get("wcode"))
+            st.caption(
+                f"저장 시 날씨 자동 기록: {wicon} {wlabel} "
+                f"/ {weather.get('temperature', '-')}°C "
+                f"/ PM2.5 {weather.get('pm25', '-')} µg/m³"
+            )
+
+            col_save, col_fav = st.columns(2)
+            with col_save:
+                if st.button("✅ 기록 저장", type="primary"):
+                    save_history(username, {
+                        "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "route_mode": route_mode,
+                        "distance_km": round(actual_km, 2),
+                        "spots": [s[0] for s in result["spots"]],
+                        "pace": pace_to_string(pace_val),
+                        "calories_kcal": estimate_calories(weight_kg, actual_km),
+                        "memo": run_memo.strip(),
+                        "weather_snapshot": {
+                            "temperature": weather.get("temperature"),
+                            "pm25": weather.get("pm25"),
+                            "pm10": weather.get("pm10"),
+                            "precipitation": weather.get("precipitation"),
+                            "wcode": weather.get("wcode"),
+                            "weather_label": wlabel,
+                            "weather_icon": wicon,
+                        },
+                    })
+                    st.session_state["saved_last"] = True
+                    st.rerun()
+
+            with col_fav:
+                fav_name = st.text_input("즐겨찾기 이름", placeholder="예: 반포→잠실")
+                if st.button("⭐ 즐겨찾기 저장"):
+                    if fav_name.strip():
+                        save_favorite(username, {
+                            "name": fav_name.strip(),
+                            "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "route_mode": route_mode,
+                            "distance_km": round(actual_km, 2),
+                            "spots": [s[0] for s in result["spots"]],
+                        })
+                        st.success("즐겨찾기에 저장했습니다!")
+                    else:
+                        st.warning("이름을 입력해주세요.")
+
+            if st.session_state["saved_last"]:
+                st.success("기록이 저장되었습니다!")
+        else:
+            st.info("왼쪽에서 조건을 설정하고 '루트 생성'을 눌러보세요.")
+
+    st.caption("저장한 러닝은 **📓 러닝 기록** 탭 달력에서 날짜별로 확인할 수 있습니다.")
+    st.caption("공개 경로 서버 응답이 느릴 경우 결과가 다소 늦게 나올 수 있습니다.")
+
+
+# ════════════════════════════════════════════════════════
+# 탭 2: 7일 날씨 예보
+# ════════════════════════════════════════════════════════
+with tab_weather:
+    st.subheader("🌤️ 한강 기준 7일 러닝 날씨 예보")
+    with st.spinner("날씨 예보 불러오는 중..."):
+        forecast = get_7day_forecast()
+
+    if not forecast:
+        st.error("날씨 예보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
+    else:
+        best_days = []
+        cols = st.columns(7)
+        for i, (date, tmax, tmin, prec, wcode) in enumerate(forecast):
+            label, icon = wmo_label(wcode)
+            good = is_good_running_day(tmax, tmin, prec, wcode)
+            if good:
+                best_days.append(date)
+            day_dt = datetime.strptime(date, "%Y-%m-%d")
+            day_label = day_dt.strftime("%m/%d")
+            weekday = ["월","화","수","목","금","토","일"][day_dt.weekday()]
+            with cols[i]:
+                border_color = "#1D9E75" if good else "#ccc"
+                bg_color = "#E1F5EE" if good else "transparent"
+                st.markdown(
+                    f"<div style='border:2px solid {border_color};border-radius:10px;"
+                    f"padding:8px 4px;text-align:center;background:{bg_color}'>"
+                    f"<div style='font-size:11px;color:#555'>{day_label} ({weekday})</div>"
+                    f"<div style='font-size:22px'>{icon}</div>"
+                    f"<div style='font-size:11px'>{label}</div>"
+                    f"<div style='font-size:12px;font-weight:600'>"
+                    f"{int(tmax) if tmax else '-'}° / {int(tmin) if tmin else '-'}°</div>"
+                    f"<div style='font-size:11px;color:#378ADD'>💧 {prec:.1f}mm</div>"
+                    f"{'<div style=\"font-size:10px;color:#0F6E56;font-weight:600\">✓ 추천</div>' if good else ''}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+        if best_days:
+            best_strs = [datetime.strptime(d, "%Y-%m-%d").strftime("%m/%d(%a)") for d in best_days[:3]]
+            st.success(f"이번 주 러닝 추천 날: {', '.join(best_strs)}")
+        else:
+            st.warning("이번 주는 러닝하기 좋은 날씨가 많지 않습니다.")
+
+        st.divider()
+        dates_str = [datetime.strptime(d[0], "%Y-%m-%d").strftime("%m/%d") for d in forecast]
+
+        fig_wt = go.Figure()
+        fig_wt.add_trace(go.Scatter(
+            x=dates_str, y=[d[1] for d in forecast],
+            mode="lines+markers", name="최고 기온",
+            line=dict(color="#D85A30", width=2),
+        ))
+        fig_wt.add_trace(go.Scatter(
+            x=dates_str, y=[d[2] for d in forecast],
+            mode="lines+markers", name="최저 기온",
+            line=dict(color="#378ADD", width=2),
+        ))
+        fig_wt.add_hrect(
+            y0=-5, y1=32, fillcolor="#E1F5EE", opacity=0.15,
+            annotation_text="러닝 적정 기온", annotation_position="top left",
+        )
+        fig_wt.update_layout(
+            title="7일 기온 추이", yaxis_title="기온 (°C)",
+            plot_bgcolor="white", paper_bgcolor="white", height=300,
+        )
+        st.plotly_chart(fig_wt, use_container_width=True)
+
+        fig_pr = go.Figure(go.Bar(
+            x=dates_str, y=[d[3] for d in forecast],
+            marker_color=["#D85A30" if (d[3] or 0) > 2 else "#85B7EB" for d in forecast],
+            text=[f"{d[3]:.1f}mm" for d in forecast], textposition="outside",
+        ))
+        fig_pr.update_layout(
+            title="일별 강수량", yaxis_title="강수 (mm)",
+            plot_bgcolor="white", paper_bgcolor="white", height=260,
+        )
+        st.plotly_chart(fig_pr, use_container_width=True)
+
+
+# ════════════════════════════════════════════════════════
+# 탭 3: 러닝 기록 (달력 + 날짜별 기록)
+# ════════════════════════════════════════════════════════
+with tab_journal:
+    st.session_state.setdefault("cal_y", datetime.now().year)
+    st.session_state.setdefault("cal_m", datetime.now().month)
+    st.session_state.setdefault("cal_selected", datetime.now().date().isoformat())
+
+    history_j = load_history(username)
+    by_date = group_history_by_date(history_j)
+
+    cy, cm = int(st.session_state["cal_y"]), int(st.session_state["cal_m"])
+    try:
+        sel_d = datetime.strptime(st.session_state["cal_selected"], "%Y-%m-%d").date()
+    except Exception:
+        sel_d = datetime.now().date()
+        st.session_state["cal_selected"] = sel_d.isoformat()
+
+    month_total = 0.0
+    month_runs = 0
+    for dk, runs in by_date.items():
+        try:
+            y, m, _ = int(dk[:4]), int(dk[5:7]), int(dk[8:10])
+            if y == cy and m == cm:
+                month_total += sum(r.get("distance_km", 0) for r in runs)
+                month_runs += len(runs)
+        except Exception:
+            pass
+
+    st.markdown(
+        """
+        <div class="rj-hero">
+            <h2>📓 러닝 저널</h2>
+            <p>달력에서 날짜를 눌러 그날의 기록을 보고, 과거 날짜에도 수동으로 러닝을 남길 수 있어요.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.metric("이번 달 (달력)", f"{month_total:.1f} km")
+    with m2:
+        st.metric("이번 달 러닝 횟수", f"{month_runs}회")
+    with m3:
+        st.metric("저장된 기록", f"{len(history_j)}건")
+    with m4:
+        streak_now, _ = calc_streak(history_j)
+        st.metric("연속 러닝", f"{streak_now}일")
+
+    # ── 달력 ──
+    st.markdown('<div class="rj-cal-wrap">', unsafe_allow_html=True)
+
+    nav_l, nav_c, nav_r = st.columns([1, 4, 1])
+    with nav_l:
+        if st.button("◀ 이전 달", key="cal_prev", use_container_width=True):
+            if cm == 1:
+                st.session_state["cal_y"] = cy - 1
+                st.session_state["cal_m"] = 12
+            else:
+                st.session_state["cal_m"] = cm - 1
+            st.rerun()
+    with nav_c:
+        st.markdown(
+            f"<div style='text-align:center;font-weight:700;font-size:1.15rem;"
+            f"color:#0f172a;padding:0.35rem 0;'>{cy}년 {cm}월</div>",
+            unsafe_allow_html=True,
+        )
+    with nav_r:
+        if st.button("다음 달 ▶", key="cal_next", use_container_width=True):
+            if cm == 12:
+                st.session_state["cal_y"] = cy + 1
+                st.session_state["cal_m"] = 1
+            else:
+                st.session_state["cal_m"] = cm + 1
+            st.rerun()
+
+    # 요일 헤더 (일~토)
+    weekday_labels = ["일", "월", "화", "수", "목", "금", "토"]
+    hcols = st.columns(7)
+    for i, wn in enumerate(weekday_labels):
+        color = "#dc2626" if i == 0 else ("#2563eb" if i == 6 else "#64748b")
+        with hcols[i]:
+            st.markdown(
+                f"<div class='rj-day-head' style='color:{color};'>{wn}</div>",
+                unsafe_allow_html=True,
+            )
+
+    cal_obj = calendar.Calendar(firstweekday=6)  # 일요일 시작
+    weeks = cal_obj.monthdatescalendar(cy, cm)
+    today = datetime.now().date()
+
+    for week in weeks:
+        cols = st.columns(7)
+        for i, d in enumerate(week):
+            with cols[i]:
+                if d.month != cm:
+                    # 빈 셀
+                    st.markdown("<div class='cal-empty'></div>", unsafe_allow_html=True)
+                    continue
+
+                day_key = d.isoformat()
+                day_runs = by_date.get(day_key, [])
+                km_d = sum(r.get("distance_km", 0) for r in day_runs)
+                is_today = d == today
+                is_sel = day_key == st.session_state["cal_selected"]
+                is_sun = (i == 0)
+                is_sat = (i == 6)
+
+                # 대표 페이스 (첫 기록의 페이스)
+                rep_pace = ""
+                if day_runs:
+                    p = day_runs[0].get("pace", "")
+                    if p and p != "-":
+                        rep_pace = p
+
+                # 셀 CSS 클래스
+                cell_cls = "cal-cell"
+                if is_sel:
+                    cell_cls += " selected"
+                elif is_today:
+                    cell_cls += " today"
+                elif day_runs:
+                    cell_cls += " has-run"
+
+                day_color = "#dc2626" if is_sun else ("#2563eb" if is_sat else "#1e293b")
+
+                # 날짜 숫자 + 점 + km + 페이스를 각각 다른 줄에 표시
+                km_html = (
+                    f"<div class='cal-cell-km'>🏃 {km_d:.1f}km</div>"
+                    if km_d > 0 else ""
+                )
+                pace_html = (
+                    f"<div class='cal-cell-pace'>⏱ {html.escape(rep_pace)}</div>"
+                    if rep_pace else ""
+                )
+                dot_html = (
+                    "<div class='cal-today-dot'></div>"
+                    if is_today and not day_runs else
+                    "<div class='cal-run-dot'></div>"
+                    if day_runs else ""
+                )
+
+                st.markdown(
+                    f"<div class='{cell_cls}'>"
+                    f"<div class='cal-cell-day' style='color:{day_color};'>{d.day}</div>"
+                    f"{dot_html}"
+                    f"{km_html}"
+                    f"{pace_html}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+                # 클릭 버튼 (투명하게 위에 덮기)
+                help_txt = (
+                    f"{len(day_runs)}회 · {km_d:.1f} km"
+                    if day_runs
+                    else "기록 없음"
+                )
+                btn_label = str(d.day)
+                if st.button(
+                    btn_label,
+                    key=f"pick_{day_key}",
+                    use_container_width=True,
+                    type="primary" if is_sel else "secondary",
+                    help=help_txt,
+                ):
+                    st.session_state["cal_selected"] = day_key
+                    st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── 선택 날짜 기록 ──
+    sel_iso = st.session_state["cal_selected"]
+    try:
+        sel_dt = datetime.strptime(sel_iso, "%Y-%m-%d")
+        wdx = ["월", "화", "수", "목", "금", "토", "일"][sel_dt.weekday()]
+        sel_title = sel_dt.strftime(f"%Y년 %m월 %d일 ({wdx})")
+    except Exception:
+        sel_title = sel_iso
+
+    st.markdown(f"### 📌 {sel_title}")
+
+    runs_day = sorted(
+        by_date.get(sel_iso, []),
+        key=lambda x: x.get("saved_at", ""),
+        reverse=True,
+    )
+
+    if runs_day:
+        for item in runs_day:
+            snap = item.get("weather_snapshot") or {}
+            spots = item.get("spots") or []
+            spots_txt = " → ".join(spots) if spots else "—"
+            w_badge = ""
+            if snap:
+                w_badge = (
+                    f"{snap.get('weather_icon', '')} {snap.get('weather_label', '')} "
+                    f"{snap.get('temperature', '-')}°C"
+                )
+            memo_safe = html.escape(str(item.get("memo", "")))
+            pace_safe = html.escape(str(item.get("pace", "-")))
+            dist_safe = html.escape(str(item.get("distance_km", "-")))
+            with st.container():
+                st.markdown(
+                    f"<div style='background:#fff;border:1px solid #e2e8f0;border-radius:14px;"
+                    f"padding:0.9rem 1rem;margin-bottom:0.65rem;"
+                    f"box-shadow:0 4px 14px rgba(15,23,42,0.06);'>"
+                    f"<div style='font-size:0.8rem;color:#64748b;margin-bottom:0.35rem;'>"
+                    f"{html.escape(str(item.get('saved_at', '')))}</div>"
+                    # 거리·모드 — 한 줄
+                    f"<div style='font-weight:700;font-size:1.05rem;color:#0f172a;'>"
+                    f"{html.escape(str(item.get('route_mode', '-')))} · {dist_safe} km · {html.escape(str(item.get('calories_kcal', '-')))} kcal</div>"
+                    # 페이스 — 별도 줄, 강조 색상
+                    f"<div style='margin-top:0.25rem;font-size:0.92rem;color:#0f766e;font-weight:600;'>"
+                    f"⏱ 페이스 {pace_safe}</div>"
+                    f"<div style='margin-top:0.35rem;color:#334155;font-size:0.9rem;'>"
+                    f"📍 {html.escape(spots_txt)}</div>"
+                    + (
+                        f"<div style='margin-top:0.25rem;font-size:0.85rem;'>"
+                        f"{html.escape(w_badge)}</div>"
+                        if w_badge else ""
+                    )
+                    + (
+                        f"<div style='margin-top:0.45rem;padding:0.45rem 0.6rem;"
+                        f"background:#f0fdfa;border-radius:8px;font-size:0.88rem;'>"
+                        f"💬 {memo_safe}</div>"
+                        if item.get("memo") else ""
+                    )
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+    else:
+        st.info("선택한 날짜에 저장된 러닝이 없어요. 아래에서 새 기록을 추가해 보세요.")
+
+    with st.expander("✏️ 이 날짜에 러닝 기록 추가 (수동)", expanded=not runs_day):
+        st.caption("실제로 달린 날·거리를 남기거나, 루트 탭 저장 전 기록을 보완할 때 사용하세요.")
+        with st.form("manual_run_entry", clear_on_submit=True):
+            c_date, c_time = st.columns(2)
+            with c_date:
+                picked = st.date_input("날짜", value=sel_d, key="manual_run_date")
+            with c_time:
+                run_time = st.time_input("시각", value=dt_time(12, 0))
+            dist_f = st.number_input("거리 (km)", 0.1, 100.0, 5.0, 0.1)
+            mode_f = st.radio("형태", ["편도", "왕복"], horizontal=True)
+            pace_f = st.text_input("페이스 (선택)", placeholder="예: 5:30/km")
+            weight_f = st.number_input("체중 (kcal 계산)", 30.0, 150.0, 65.0, 0.5)
+            memo_f = st.text_input("메모 (선택)")
+            submitted = st.form_submit_button("기록 추가", type="primary")
+
+            if submitted:
+                raw_pace = pace_f.strip()
+                p_str = "-"
+                pace_ok = True
+                if raw_pace:
+                    pm = pace_to_minutes(raw_pace)
+                    if pm is None:
+                        st.error("페이스 형식을 확인해 주세요. (예: 5:30 또는 5:30/km)")
+                        pace_ok = False
+                    else:
+                        p_str = pace_to_string(pm)
+                if pace_ok:
+                    saved_at = f"{picked.isoformat()} {run_time.hour:02d}:{run_time.minute:02d}:00"
+                    save_history(
+                        username,
+                        {
+                            "saved_at": saved_at,
+                            "route_mode": mode_f,
+                            "distance_km": round(float(dist_f), 2),
+                            "spots": [],
+                            "pace": p_str,
+                            "calories_kcal": estimate_calories(weight_f, float(dist_f)),
+                            "memo": memo_f.strip(),
+                            "weather_snapshot": {},
+                            "manual_entry": True,
+                        },
+                    )
+                    st.session_state["cal_selected"] = picked.isoformat()
+                    st.session_state["cal_y"] = picked.year
+                    st.session_state["cal_m"] = picked.month
+                    st.success("기록을 추가했습니다!")
+                    st.rerun()
+
+
+# ════════════════════════════════════════════════════════
+# 탭 4: 나의 통계
+# ════════════════════════════════════════════════════════
+with tab_stats:
+    st.subheader(f"📊 {username}님의 러닝 통계")
+    history = load_history(username)
+    chart_data = build_chart_data(history)
+
+    current_streak, best_streak = calc_streak(history)
+    sk1, sk2 = st.columns(2)
+    with sk1:
+        streak_emoji = "🔥" * min(current_streak, 5) if current_streak > 0 else "💤"
+        st.metric("현재 연속 러닝", f"{current_streak}일 {streak_emoji}")
+    with sk2:
+        st.metric("최고 연속 기록", f"{best_streak}일 🏆")
+
+    if current_streak >= 7:
+        st.success("🎉 7일 연속 달성! 정말 대단해요!")
+    elif current_streak >= 3:
+        st.info(f"💪 {current_streak}일 연속 중! 계속 이어가세요!")
+
+    st.divider()
+
+    goal_data = load_goal(username)
+    goal_km = goal_data.get("monthly_km", 50.0)
+    gc1, gc2 = st.columns([2, 1])
+    with gc1:
+        new_goal = st.number_input("이번 달 목표 거리 (km)", 10.0, 500.0, float(goal_km), 5.0)
+        if st.button("목표 저장"):
+            save_goal(username, new_goal)
+            st.success(f"월간 목표 {new_goal:.0f} km 저장!")
+            goal_km = new_goal
+    with gc2:
+        month_dist = this_month_dist(history)
+        pct = min(month_dist / goal_km * 100, 100) if goal_km > 0 else 0
+        st.metric("이번 달 달린 거리", f"{month_dist:.1f} km", delta=f"목표의 {pct:.0f}%")
+    st.progress(max(0.0, min(pct / 100, 1.0)))
+    if pct >= 100:
+        st.success(f"🎉 이번 달 목표 {goal_km:.0f} km 달성!")
+    else:
+        st.caption(f"목표까지 {max(goal_km - month_dist, 0):.1f} km 남았습니다.")
+
+    st.divider()
+
+    if not chart_data:
+        st.info("아직 저장된 기록이 없습니다. 루트 추천 탭에서 기록을 저장해보세요!")
+    else:
+        s1, s2, s3 = st.columns(3)
+        s1.metric("총 러닝 횟수", f"{chart_data['run_count']} 회")
+        s2.metric("총 누적 거리", f"{chart_data['total_dist']:.1f} km")
+        s3.metric("총 소모 칼로리", f"{chart_data['total_cal']:,} kcal")
+
+        if len(chart_data["pace_vals"]) >= 2:
+            fig_p = go.Figure(go.Scatter(
+                x=chart_data["pace_dates"], y=chart_data["pace_vals"],
+                mode="lines+markers", line=dict(color="#1D9E75", width=2),
+                marker=dict(size=7),
+                text=[pace_to_string(p) for p in chart_data["pace_vals"]],
+                hovertemplate="%{x}<br>페이스: %{text}<extra></extra>",
+            ))
+            fig_p.update_layout(
+                title="페이스 추이 (낮을수록 빠름)",
+                yaxis_title="페이스 (분/km)", yaxis=dict(autorange="reversed"),
+                plot_bgcolor="white", paper_bgcolor="white", height=280,
+            )
+            st.plotly_chart(fig_p, use_container_width=True)
+
+        st.caption("날짜별 상세 기록은 **📓 러닝 기록** 탭에서 달력으로 확인할 수 있어요.")
+
+
+# ════════════════════════════════════════════════════════
+# 탭 5: 즐겨찾기
+# ════════════════════════════════════════════════════════
+with tab_favs:
+    st.subheader("⭐ 즐겨찾기 루트")
+    favs = load_favorites(username)
+    if not favs:
+        st.info("즐겨찾기한 루트가 없습니다. 루트 추천 탭에서 저장해보세요!")
+    else:
+        for i, fav in enumerate(favs):
+            col_info, col_del = st.columns([5, 1])
+            with col_info:
+                st.markdown(
+                    f"**⭐ {fav['name']}**  \n"
+                    f"{fav['route_mode']} / {fav['distance_km']} km  \n"
+                    f"{' → '.join(fav['spots'])}  \n"
+                    f"<small>{fav['saved_at']}</small>",
+                    unsafe_allow_html=True,
+                )
+            with col_del:
+                if st.button("삭제", key=f"del_fav_{i}"):
+                    delete_favorite(username, i)
+                    st.rerun()
+            st.divider()
+
+
+# ════════════════════════════════════════════════════════
+# 탭 6: 친구
+# ════════════════════════════════════════════════════════
+with tab_friends:
+    st.subheader("👥 러닝 친구")
+
+    # ── 친구 추가 ──
+    with st.container():
+        st.markdown(
+            "<div style='background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;"
+            "padding:1rem 1.1rem;margin-bottom:1rem;'>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("#### 🔍 친구 추가")
+        col_inp, col_btn = st.columns([3, 1])
+        with col_inp:
+            friend_search = st.text_input(
+                "아이디로 친구 찾기",
+                placeholder="친구의 아이디를 입력하세요",
+                label_visibility="collapsed",
+                key="friend_search_input",
+            )
+        with col_btn:
+            add_clicked = st.button("친구 추가", type="primary", use_container_width=True)
+
+        if add_clicked:
+            if friend_search.strip():
+                ok, msg = add_friend(username, friend_search.strip())
+                if ok:
+                    st.success(f"✅ {msg}")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {msg}")
+            else:
+                st.warning("아이디를 입력해주세요.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── 친구 목록 ──
+    friends = get_friends(username)
+
+    if not friends:
+        st.markdown(
+            "<div style='text-align:center;padding:2.5rem 1rem;color:#94a3b8;'>"
+            "<div style='font-size:3rem;margin-bottom:0.75rem;'>👟</div>"
+            "<div style='font-size:1rem;font-weight:600;'>아직 친구가 없어요</div>"
+            "<div style='font-size:0.85rem;margin-top:0.3rem;'>위에서 친구를 추가해보세요!</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(f"**총 {len(friends)}명의 러닝 친구**")
+        st.markdown("")
+
+        for fid in friends:
+            # 친구 통계
+            f_history = load_history(fid)
+            f_total = sum(h.get("distance_km", 0) for h in f_history)
+            f_count = len(f_history)
+            f_streak, _ = calc_streak(f_history)
+
+            # 아바타 이니셜
+            initial = fid[0].upper() if fid else "?"
+
+            col_card, col_del = st.columns([6, 1])
+            with col_card:
+                st.markdown(
+                    f"<div class='friend-card'>"
+                    f"<div class='friend-avatar'>{html.escape(initial)}</div>"
+                    f"<div class='friend-info'>"
+                    f"<div class='friend-name'>@{html.escape(fid)}</div>"
+                    f"<div class='friend-stats'>"
+                    f"🏃 총 {f_total:.1f} km &nbsp;·&nbsp; "
+                    f"📅 {f_count}회 &nbsp;·&nbsp; "
+                    f"🔥 {f_streak}일 연속"
+                    f"</div>"
+                    f"</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            with col_del:
+                st.markdown("<div style='margin-top:0.6rem;'>", unsafe_allow_html=True)
+                if st.button("삭제", key=f"del_friend_{fid}", help=f"{fid} 친구 삭제"):
+                    remove_friend(username, fid)
+                    st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
+
+    st.divider()
+
+    # ── 앱 내 전체 사용자 검색 힌트 ──
+    all_users = load_users()
+    other_users = [u for u in all_users.keys() if u != username and u not in friends]
+    if other_users:
+        st.markdown("#### 💡 알 수도 있는 러너")
+        st.caption("같은 앱을 사용 중인 다른 러너들이에요.")
+        shown = other_users[:5]
+        for uid in shown:
+            u_history = load_history(uid)
+            u_total = sum(h.get("distance_km", 0) for h in u_history)
+            initial = uid[0].upper()
+            col_u, col_add = st.columns([5, 1])
+            with col_u:
+                st.markdown(
+                    f"<div class='friend-card' style='border-color:#cbd5e1;background:#f8fafc;'>"
+                    f"<div class='friend-avatar' style='background:linear-gradient(135deg,#475569,#64748b);'>"
+                    f"{html.escape(initial)}</div>"
+                    f"<div class='friend-info'>"
+                    f"<div class='friend-name'>@{html.escape(uid)}</div>"
+                    f"<div class='friend-stats'>🏃 총 {u_total:.1f} km</div>"
+                    f"</div></div>",
+                    unsafe_allow_html=True,
+                )
+            with col_add:
+                st.markdown("<div style='margin-top:0.6rem;'>", unsafe_allow_html=True)
+                if st.button("추가", key=f"quick_add_{uid}", type="primary"):
+                    ok, msg = add_friend(username, uid)
+                    if ok:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+                st.markdown("</div>", unsafe_allow_html=True)
