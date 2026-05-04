@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import calendar
 import hashlib
 import html
@@ -22,7 +23,7 @@ st.set_page_config(page_title="한강 러닝 루트 추천", layout="wide")
 st.markdown(
     """
     <style>
-    /* 모바일·좁은 화면: 루트 탭 Folium 직후 iframe만 높이 축소 (마커 div + 인접 컴포넌트) */
+    /* 모바일·좁은 화면 */
     @media screen and (max-width: 768px) {
         .block-container { padding-top: 0.75rem !important; padding-bottom: 0.75rem !important; }
         div.element-container:has(.hangang-folium-marker) + div.element-container iframe {
@@ -31,7 +32,8 @@ st.markdown(
             min-height: 240px !important;
         }
     }
-    /* 러닝 기록 탭 – 달력 카드 톤 */
+
+    /* 히어로 배너 */
     .rj-hero {
         background: linear-gradient(135deg, #0f766e 0%, #115e59 45%, #134e4a 100%);
         color: #ecfeff;
@@ -43,6 +45,8 @@ st.markdown(
     }
     .rj-hero h2 { margin: 0 0 0.35rem 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
     .rj-hero p { margin: 0; opacity: 0.92; font-size: 0.92rem; line-height: 1.45; }
+
+    /* 달력 래퍼 */
     .rj-cal-wrap {
         background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
         border-radius: 16px;
@@ -51,6 +55,8 @@ st.markdown(
         box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
         margin-bottom: 1rem;
     }
+
+    /* 달력 요일 헤더 */
     .rj-day-head {
         text-align: center;
         font-size: 0.72rem;
@@ -59,12 +65,181 @@ st.markdown(
         letter-spacing: 0.06em;
         padding: 0.15rem 0 0.5rem;
     }
+
+    /* ── 달력 날짜 셀 ── */
+    .cal-cell {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        min-height: 72px;          /* 세로 높이 증가 */
+        padding: 6px 4px 6px;
+        border-radius: 10px;
+        border: 1.5px solid #e2e8f0;
+        background: #ffffff;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        margin: 2px 1px;
+        box-shadow: 0 1px 4px rgba(15,23,42,0.04);
+        position: relative;
+        overflow: hidden;
+    }
+    .cal-cell:hover {
+        border-color: #0d9488;
+        box-shadow: 0 4px 12px rgba(13,148,136,0.18);
+        background: #f0fdfa;
+        transform: translateY(-1px);
+    }
+    .cal-cell.selected {
+        border-color: #0f766e;
+        background: linear-gradient(135deg, #ccfbf1, #f0fdfa);
+        box-shadow: 0 4px 16px rgba(15,118,110,0.22);
+    }
+    .cal-cell.today {
+        border-color: #2563eb;
+        background: #eff6ff;
+    }
+    .cal-cell.has-run {
+        border-color: #10b981;
+        background: linear-gradient(135deg, #ecfdf5, #f0fdf4);
+    }
+    .cal-cell-day {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #1e293b;
+        line-height: 1.2;
+    }
+    .cal-cell-day.sun { color: #dc2626; }
+    .cal-cell-day.sat { color: #2563eb; }
+    .cal-cell-day.today-label { color: #1d4ed8; }
+    .cal-cell-pace {
+        font-size: 0.62rem;
+        color: #0f766e;
+        font-weight: 600;
+        margin-top: 3px;
+        line-height: 1.2;
+        text-align: center;
+        white-space: nowrap;
+    }
+    .cal-cell-km {
+        font-size: 0.65rem;
+        color: #059669;
+        font-weight: 700;
+        margin-top: 2px;
+        line-height: 1.2;
+    }
+    .cal-today-dot {
+        width: 5px; height: 5px;
+        border-radius: 50%;
+        background: #2563eb;
+        margin-top: 2px;
+    }
+    .cal-run-dot {
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: #10b981;
+        margin-top: 2px;
+    }
+    .cal-empty {
+        min-height: 72px;
+        margin: 2px 1px;
+    }
+
+    /* 회원가입 완료 모달 */
+    .signup-modal-overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .signup-modal {
+        background: #ffffff;
+        border-radius: 20px;
+        padding: 2.5rem 2rem;
+        max-width: 380px;
+        width: 90%;
+        text-align: center;
+        box-shadow: 0 25px 60px rgba(0,0,0,0.25);
+        animation: popIn 0.35s ease;
+    }
+    @keyframes popIn {
+        from { opacity: 0; transform: scale(0.85) translateY(20px); }
+        to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .signup-modal .check-icon {
+        font-size: 3.5rem;
+        margin-bottom: 0.75rem;
+    }
+    .signup-modal h3 {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: #0f766e;
+        margin: 0 0 0.5rem;
+    }
+    .signup-modal p {
+        font-size: 0.9rem;
+        color: #475569;
+        margin: 0 0 1.25rem;
+    }
+
+    /* 친구 카드 */
+    .friend-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 0.5rem;
+        box-shadow: 0 2px 8px rgba(15,23,42,0.05);
+    }
+    .friend-avatar {
+        width: 40px; height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #0f766e, #14b8a6);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.1rem; font-weight: 700; color: white;
+        flex-shrink: 0;
+    }
+    .friend-info { flex: 1; }
+    .friend-name { font-weight: 700; font-size: 0.92rem; color: #1e293b; }
+    .friend-stats { font-size: 0.78rem; color: #64748b; margin-top: 2px; }
+
+    /* 로그인 화면 스타일 */
+    .login-container {
+        max-width: 420px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem;
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.12);
+        border: 1px solid #e2e8f0;
+    }
+    .login-title {
+        text-align: center;
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: #0f766e;
+        margin-bottom: 0.25rem;
+    }
+    .login-sub {
+        text-align: center;
+        font-size: 0.88rem;
+        color: #64748b;
+        margin-bottom: 1.5rem;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# 한강 공원
+# ──────────────────────────────────────────────────────────
+# 상수
+# ──────────────────────────────────────────────────────────
 HANGANG_PARKS = [
     ("여의도한강공원", 37.5271, 126.9326),
     ("반포한강공원",   37.5096, 126.9945),
@@ -75,9 +250,7 @@ HANGANG_PARKS = [
     ("난지한강공원",   37.5667, 126.8765),
 ]
 
-# 한강변 시설 및 랜드마크
 HANGANG_LANDMARKS = [
-    # 교량
     ("한강대교 남단",     37.5186, 126.9641),
     ("마포대교 북단",     37.5390, 126.9477),
     ("원효대교 북단",     37.5353, 126.9568),
@@ -87,7 +260,6 @@ HANGANG_LANDMARKS = [
     ("성수대교 북단",     37.5373, 127.0558),
     ("영동대교 북단",     37.5295, 127.0637),
     ("잠실대교 북단",     37.5221, 127.0857),
-    # 체육·문화 시설
     ("세빛섬",            37.5073, 126.9977),
     ("노들섬",            37.5170, 126.9600),
     ("선유도공원",        37.5382, 126.8986),
@@ -95,7 +267,6 @@ HANGANG_LANDMARKS = [
     ("여의나루역",        37.5280, 126.9337),
     ("뚝섬유원지역",      37.5306, 127.0668),
     ("잠실나루역",        37.5181, 127.0832),
-    # 운동·편의 시설
     ("반포 수상택시 승강장", 37.5089, 126.9971),
     ("이촌 한강 수영장",     37.5191, 126.9693),
     ("뚝섬 자전거공원",      37.5303, 127.0735),
@@ -106,7 +277,6 @@ HANGANG_LANDMARKS = [
     ("암사 생태공원",        37.5540, 127.1337),
 ]
 
-# 루트 생성에 사용할 전체 후보 지점
 HANGANG_SPOTS = HANGANG_PARKS + HANGANG_LANDMARKS
 
 PARK_FACILITIES = {
@@ -257,7 +427,7 @@ def register_user(username, password):
         return False, "아이디는 2자 이상이어야 합니다."
     if len(password) < 4:
         return False, "비밀번호는 4자 이상이어야 합니다."
-    users[username] = hash_pw(password)
+    users[username] = {"pw": hash_pw(password), "friends": []}
     save_users(users)
     return True, "회원가입 완료!"
 
@@ -266,9 +436,56 @@ def login_user(username, password):
     users = load_users()
     if username not in users:
         return False, "존재하지 않는 아이디입니다."
-    if users[username] != hash_pw(password):
+    stored = users[username]
+    # 구버전 호환: 문자열로 저장된 경우
+    pw_hash = stored if isinstance(stored, str) else stored.get("pw", "")
+    if pw_hash != hash_pw(password):
         return False, "비밀번호가 틀렸습니다."
     return True, "로그인 성공!"
+
+
+# ──────────────────────────────────────────────────────────
+# 친구 관리
+# ──────────────────────────────────────────────────────────
+def get_friends(username):
+    users = load_users()
+    u = users.get(username, {})
+    if isinstance(u, str):
+        return []
+    return u.get("friends", [])
+
+
+def add_friend(username, friend_id):
+    users = load_users()
+    if friend_id not in users:
+        return False, "존재하지 않는 사용자입니다."
+    if friend_id == username:
+        return False, "자기 자신은 친구 추가할 수 없습니다."
+    u = users.get(username, {})
+    if isinstance(u, str):
+        users[username] = {"pw": u, "friends": []}
+        u = users[username]
+    friends = u.get("friends", [])
+    if friend_id in friends:
+        return False, "이미 친구입니다."
+    friends.append(friend_id)
+    u["friends"] = friends
+    users[username] = u
+    save_users(users)
+    return True, f"{friend_id}님을 친구로 추가했습니다!"
+
+
+def remove_friend(username, friend_id):
+    users = load_users()
+    u = users.get(username, {})
+    if isinstance(u, str):
+        return
+    friends = u.get("friends", [])
+    if friend_id in friends:
+        friends.remove(friend_id)
+    u["friends"] = friends
+    users[username] = u
+    save_users(users)
 
 
 # ──────────────────────────────────────────────────────────
@@ -445,31 +662,22 @@ def osrm_route(coords):
 
 
 def generate_random_route(target_km, route_mode, tolerance_ratio=0.08, max_try=30):
-    """공원 + 시설/랜드마크를 모두 활용한 다양한 루트 생성"""
     target_m = target_km * 1000.0
     best, best_diff = None, float("inf")
 
     for attempt in range(max_try):
-        # 매 시도마다 시드 변경으로 다양성 확보
         random.seed(st.session_state.get("seed", 0) + attempt * 37 + int(target_km * 100))
-
-        # 경유 지점 수 랜덤 (2~6개)
         point_count = random.randint(2, min(6, len(HANGANG_SPOTS)))
-
-        # 출발은 반드시 공원 중에서 선택
         start = random.choice(HANGANG_PARKS)
-
-        # 나머지 경유지: 공원 + 랜드마크 전체에서 랜덤 선택
         remaining = [s for s in HANGANG_SPOTS if s != start]
         random.shuffle(remaining)
         waypoints = [start] + remaining[:point_count - 1]
-        random.shuffle(waypoints[1:])  # 출발지 고정, 경유 순서만 셔플
+        random.shuffle(waypoints[1:])
 
         route_points = [(s[1], s[2]) for s in waypoints]
         if route_mode == "왕복":
             route_points.append((waypoints[0][1], waypoints[0][2]))
 
-        # 대략적인 거리 사전 체크
         rough_km = sum(
             haversine_km(route_points[i][0], route_points[i][1],
                          route_points[i+1][0], route_points[i+1][1])
@@ -500,7 +708,77 @@ def build_map(result=None):
     m = folium.Map(location=list(HANGANG_CENTER), zoom_start=12, tiles="CartoDB positron")
     if result:
         latlon_line = [(lat, lon) for lon, lat in result["line"]]
-        folium.PolyLine(latlon_line, color="red", weight=6, opacity=0.9).add_to(m)
+        spots = result.get("spots", [])
+
+        # ── 경로 선 (그라데이션 느낌을 위해 두 겹) ──
+        folium.PolyLine(latlon_line, color="#fca5a5", weight=10, opacity=0.4).add_to(m)
+        folium.PolyLine(latlon_line, color="#e11d48", weight=5, opacity=0.95).add_to(m)
+
+        start = latlon_line[0]
+        end   = latlon_line[-1]
+        start_name = spots[0][0] if spots else "출발지"
+        is_roundtrip = (abs(start[0] - end[0]) < 0.0005 and abs(start[1] - end[1]) < 0.0005)
+        end_name = spots[0][0] if (is_roundtrip and spots) else (spots[-1][0] if spots else "도착지")
+
+        # ── 출발 마커 (초록 깃발) ──
+        start_html = f"""
+        <div style="
+            background:#16a34a;color:white;
+            font-weight:700;font-size:13px;
+            padding:5px 10px;border-radius:20px;
+            box-shadow:0 2px 6px rgba(0,0,0,0.3);
+            white-space:nowrap;">
+            🚦 출발 · {start_name}
+        </div>"""
+        folium.Marker(
+            location=start,
+            tooltip=f"🚦 출발 · {start_name}",
+            popup=folium.Popup(
+                f"<b style='color:#16a34a'>🚦 출발지</b><br>{start_name}", max_width=200
+            ),
+            icon=folium.DivIcon(html=start_html, icon_size=(160, 36), icon_anchor=(10, 36)),
+        ).add_to(m)
+
+        # ── 도착 마커 (빨간 깃발) ──
+        end_html = f"""
+        <div style="
+            background:#dc2626;color:white;
+            font-weight:700;font-size:13px;
+            padding:5px 10px;border-radius:20px;
+            box-shadow:0 2px 6px rgba(0,0,0,0.3);
+            white-space:nowrap;">
+            🏁 도착 · {end_name}
+        </div>"""
+        folium.Marker(
+            location=end,
+            tooltip=f"🏁 도착 · {end_name}",
+            popup=folium.Popup(
+                f"<b style='color:#dc2626'>🏁 도착지</b><br>{end_name}", max_width=200
+            ),
+            icon=folium.DivIcon(html=end_html, icon_size=(160, 36), icon_anchor=(10, 36)),
+        ).add_to(m)
+
+        # ── 경유지 마커 (파란 원) ──
+        mid_spots = spots[1:-1] if not is_roundtrip else spots[1:]
+        for i, spot in enumerate(mid_spots, start=1):
+            folium.CircleMarker(
+                location=(spot[1], spot[2]),
+                radius=8,
+                color="#1d4ed8",
+                weight=2,
+                fill=True,
+                fill_color="#3b82f6",
+                fill_opacity=0.9,
+                tooltip=f"경유 {i} · {spot[0]}",
+                popup=folium.Popup(f"<b>📍 경유 {i}</b><br>{spot[0]}", max_width=160),
+            ).add_to(m)
+
+        # ── 지도 범위 자동 조정 ──
+        m.fit_bounds([
+            [min(p[0] for p in latlon_line), min(p[1] for p in latlon_line)],
+            [max(p[0] for p in latlon_line), max(p[1] for p in latlon_line)],
+        ])
+
     return m
 
 
@@ -566,7 +844,6 @@ def analyze_weather_pace(history):
 
 
 def group_history_by_date(history):
-    """saved_at 기준 YYYY-MM-DD 그룹 (최신 날짜가 먼저 오도록 키 정렬용으로만 사용)"""
     date_groups = OrderedDict()
     for item in history:
         try:
@@ -609,8 +886,11 @@ def build_chart_data(history):
 # ──────────────────────────────────────────────────────────
 # 세션 초기화
 # ──────────────────────────────────────────────────────────
-for k, v in [("user", None), ("seed", 0), ("last_result", None),
-             ("saved_last", False), ("show_register", False)]:
+for k, v in [
+    ("user", None), ("seed", 0), ("last_result", None),
+    ("saved_last", False), ("show_register", False),
+    ("register_success", False), ("register_username", ""),
+]:
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -618,50 +898,92 @@ for k, v in [("user", None), ("seed", 0), ("last_result", None),
 # 로그인 화면
 # ══════════════════════════════════════════════════════════
 if not st.session_state["user"]:
-    st.title("🏃 한강 러닝 루트 추천")
-    st.write("로그인 후 이용할 수 있습니다.")
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_c = st.columns([1, 2, 1])[1]
 
-    if not st.session_state["show_register"]:
-        # 로그인
-        st.subheader("로그인")
-        login_id = st.text_input("아이디", key="login_id")
-        login_pw = st.text_input("비밀번호", type="password", key="login_pw")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("로그인", type="primary", use_container_width=True):
-                ok, msg = login_user(login_id, login_pw)
-                if ok:
-                    st.session_state["user"] = login_id
-                    st.rerun()
-                else:
-                    st.error(msg)
-        with col2:
-            if st.button("회원가입하기", use_container_width=True):
-                st.session_state["show_register"] = True
+    with col_c:
+        st.markdown(
+            """
+            <div style='text-align:center; margin-bottom:1.5rem;'>
+                <div style='font-size:3rem;'>🏃</div>
+                <div style='font-size:1.6rem; font-weight:800; color:#0f766e;'>한강 러닝</div>
+                <div style='font-size:0.9rem; color:#64748b; margin-top:0.25rem;'>루트 추천 & 러닝 기록 앱</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # 회원가입 완료 모달
+        if st.session_state["register_success"]:
+            st.markdown(
+                f"""
+                <div style='background:linear-gradient(135deg,#ecfdf5,#d1fae5);
+                     border:2px solid #10b981; border-radius:18px; padding:1.75rem 1.5rem;
+                     text-align:center; margin-bottom:1.25rem;
+                     box-shadow: 0 8px 30px rgba(16,185,129,0.2);'>
+                    <div style='font-size:3rem; margin-bottom:0.5rem;'>🎉</div>
+                    <div style='font-size:1.25rem; font-weight:800; color:#065f46; margin-bottom:0.4rem;'>
+                        회원가입 완료!
+                    </div>
+                    <div style='font-size:0.92rem; color:#047857; margin-bottom:0.2rem;'>
+                        <b>{html.escape(st.session_state["register_username"])}</b>님, 환영합니다 👋
+                    </div>
+                    <div style='font-size:0.85rem; color:#6b7280; margin-top:0.5rem;'>
+                        아래에서 로그인하여 시작하세요!
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if st.button("✓ 확인", type="primary", use_container_width=True):
+                st.session_state["register_success"] = False
                 st.rerun()
-    else:
-        # 회원가입
-        st.subheader("회원가입")
-        reg_id = st.text_input("아이디 (2자 이상)", key="reg_id")
-        reg_pw = st.text_input("비밀번호 (4자 이상)", type="password", key="reg_pw")
-        reg_pw2 = st.text_input("비밀번호 확인", type="password", key="reg_pw2")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("가입하기", type="primary", use_container_width=True):
-                if reg_pw != reg_pw2:
-                    st.error("비밀번호가 일치하지 않습니다.")
-                else:
-                    ok, msg = register_user(reg_id, reg_pw)
+
+        if not st.session_state["show_register"]:
+            # 로그인
+            st.markdown("#### 로그인")
+            login_id = st.text_input("아이디", key="login_id", placeholder="아이디를 입력하세요")
+            login_pw = st.text_input("비밀번호", type="password", key="login_pw", placeholder="비밀번호를 입력하세요")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔐 로그인", type="primary", use_container_width=True):
+                    ok, msg = login_user(login_id, login_pw)
                     if ok:
-                        st.success(msg + " 로그인해주세요.")
-                        st.session_state["show_register"] = False
+                        st.session_state["user"] = login_id
+                        st.session_state["register_success"] = False
                         st.rerun()
                     else:
                         st.error(msg)
-        with col2:
-            if st.button("로그인으로 돌아가기", use_container_width=True):
-                st.session_state["show_register"] = False
-                st.rerun()
+            with col2:
+                if st.button("✏️ 회원가입", use_container_width=True):
+                    st.session_state["show_register"] = True
+                    st.session_state["register_success"] = False
+                    st.rerun()
+        else:
+            # 회원가입
+            st.markdown("#### 회원가입")
+            reg_id = st.text_input("아이디 (2자 이상)", key="reg_id", placeholder="사용할 아이디")
+            reg_pw = st.text_input("비밀번호 (4자 이상)", type="password", key="reg_pw", placeholder="비밀번호")
+            reg_pw2 = st.text_input("비밀번호 확인", type="password", key="reg_pw2", placeholder="비밀번호 재입력")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ 가입하기", type="primary", use_container_width=True):
+                    if reg_pw != reg_pw2:
+                        st.error("비밀번호가 일치하지 않습니다.")
+                    else:
+                        ok, msg = register_user(reg_id, reg_pw)
+                        if ok:
+                            st.session_state["show_register"] = False
+                            st.session_state["register_success"] = True
+                            st.session_state["register_username"] = reg_id
+                            st.rerun()
+                        else:
+                            st.error(msg)
+            with col2:
+                if st.button("← 로그인으로", use_container_width=True):
+                    st.session_state["show_register"] = False
+                    st.rerun()
+
     st.stop()
 
 # ══════════════════════════════════════════════════════════
@@ -708,8 +1030,8 @@ with w4:
 # ──────────────────────────────────────────────────────────
 # 탭
 # ──────────────────────────────────────────────────────────
-tab_route, tab_weather, tab_journal, tab_stats, tab_favs = st.tabs([
-    "🗺️ 루트 추천", "🌤️ 7일 예보", "📓 러닝 기록", "📊 나의 통계", "⭐ 즐겨찾기",
+tab_route, tab_weather, tab_journal, tab_stats, tab_favs, tab_friends = st.tabs([
+    "🗺️ 루트 추천", "🌤️ 7일 예보", "📓 러닝 기록", "📊 나의 통계", "⭐ 즐겨찾기", "👥 친구",
 ])
 
 # ════════════════════════════════════════════════════════
@@ -760,10 +1082,7 @@ with tab_route:
     map_col, info_col = st.columns([1.8, 1])
     with map_col:
         route_map = build_map(result)
-        st.markdown(
-            '<div class="hangang-folium-marker"></div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div class="hangang-folium-marker"></div>', unsafe_allow_html=True)
         st_folium(route_map, width=1100, height=650, returned_objects=[])
 
     with info_col:
@@ -967,7 +1286,9 @@ with tab_journal:
         streak_now, _ = calc_streak(history_j)
         st.metric("연속 러닝", f"{streak_now}일")
 
+    # ── 달력 ──
     st.markdown('<div class="rj-cal-wrap">', unsafe_allow_html=True)
+
     nav_l, nav_c, nav_r = st.columns([1, 4, 1])
     with nav_l:
         if st.button("◀ 이전 달", key="cal_prev", use_container_width=True):
@@ -992,41 +1313,89 @@ with tab_journal:
                 st.session_state["cal_m"] = cm + 1
             st.rerun()
 
+    # 요일 헤더 (일~토)
     weekday_labels = ["일", "월", "화", "수", "목", "금", "토"]
     hcols = st.columns(7)
     for i, wn in enumerate(weekday_labels):
+        color = "#dc2626" if i == 0 else ("#2563eb" if i == 6 else "#64748b")
         with hcols[i]:
             st.markdown(
-                f"<div class='rj-day-head'>{wn}</div>",
+                f"<div class='rj-day-head' style='color:{color};'>{wn}</div>",
                 unsafe_allow_html=True,
             )
 
-    cal_obj = calendar.Calendar(firstweekday=6)
+    cal_obj = calendar.Calendar(firstweekday=6)  # 일요일 시작
     weeks = cal_obj.monthdatescalendar(cy, cm)
+    today = datetime.now().date()
 
     for week in weeks:
         cols = st.columns(7)
         for i, d in enumerate(week):
             with cols[i]:
                 if d.month != cm:
-                    st.markdown(
-                        "<div style='min-height:3.2rem'></div>",
-                        unsafe_allow_html=True,
-                    )
+                    # 빈 셀
+                    st.markdown("<div class='cal-empty'></div>", unsafe_allow_html=True)
                     continue
+
                 day_key = d.isoformat()
                 day_runs = by_date.get(day_key, [])
                 km_d = sum(r.get("distance_km", 0) for r in day_runs)
-                is_today = d == datetime.now().date()
+                is_today = d == today
                 is_sel = day_key == st.session_state["cal_selected"]
-                btn_label = f"{d.day}"
-                if km_d > 0:
-                    btn_label = f"{d.day}\n·{km_d:.1f}km"
+                is_sun = (i == 0)
+                is_sat = (i == 6)
+
+                # 대표 페이스 (첫 기록의 페이스)
+                rep_pace = ""
+                if day_runs:
+                    p = day_runs[0].get("pace", "")
+                    if p and p != "-":
+                        rep_pace = p
+
+                # 셀 CSS 클래스
+                cell_cls = "cal-cell"
+                if is_sel:
+                    cell_cls += " selected"
+                elif is_today:
+                    cell_cls += " today"
+                elif day_runs:
+                    cell_cls += " has-run"
+
+                day_color = "#dc2626" if is_sun else ("#2563eb" if is_sat else "#1e293b")
+
+                # 날짜 숫자 + 점 + km + 페이스를 각각 다른 줄에 표시
+                km_html = (
+                    f"<div class='cal-cell-km'>🏃 {km_d:.1f}km</div>"
+                    if km_d > 0 else ""
+                )
+                pace_html = (
+                    f"<div class='cal-cell-pace'>⏱ {html.escape(rep_pace)}</div>"
+                    if rep_pace else ""
+                )
+                dot_html = (
+                    "<div class='cal-today-dot'></div>"
+                    if is_today and not day_runs else
+                    "<div class='cal-run-dot'></div>"
+                    if day_runs else ""
+                )
+
+                st.markdown(
+                    f"<div class='{cell_cls}'>"
+                    f"<div class='cal-cell-day' style='color:{day_color};'>{d.day}</div>"
+                    f"{dot_html}"
+                    f"{km_html}"
+                    f"{pace_html}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+                # 클릭 버튼 (투명하게 위에 덮기)
                 help_txt = (
                     f"{len(day_runs)}회 · {km_d:.1f} km"
                     if day_runs
                     else "기록 없음"
                 )
+                btn_label = str(d.day)
                 if st.button(
                     btn_label,
                     key=f"pick_{day_key}",
@@ -1036,11 +1405,10 @@ with tab_journal:
                 ):
                     st.session_state["cal_selected"] = day_key
                     st.rerun()
-                if is_today:
-                    st.caption("오늘")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # ── 선택 날짜 기록 ──
     sel_iso = st.session_state["cal_selected"]
     try:
         sel_dt = datetime.strptime(sel_iso, "%Y-%m-%d")
@@ -1069,6 +1437,8 @@ with tab_journal:
                     f"{snap.get('temperature', '-')}°C"
                 )
             memo_safe = html.escape(str(item.get("memo", "")))
+            pace_safe = html.escape(str(item.get("pace", "-")))
+            dist_safe = html.escape(str(item.get("distance_km", "-")))
             with st.container():
                 st.markdown(
                     f"<div style='background:#fff;border:1px solid #e2e8f0;border-radius:14px;"
@@ -1076,25 +1446,24 @@ with tab_journal:
                     f"box-shadow:0 4px 14px rgba(15,23,42,0.06);'>"
                     f"<div style='font-size:0.8rem;color:#64748b;margin-bottom:0.35rem;'>"
                     f"{html.escape(str(item.get('saved_at', '')))}</div>"
+                    # 거리·모드 — 한 줄
                     f"<div style='font-weight:700;font-size:1.05rem;color:#0f172a;'>"
-                    f"{html.escape(str(item.get('route_mode', '-')))} · "
-                    f"{html.escape(str(item.get('distance_km', '-')))} km · "
-                    f"{html.escape(str(item.get('pace', '-')))} · "
-                    f"{html.escape(str(item.get('calories_kcal', '-')))} kcal</div>"
+                    f"{html.escape(str(item.get('route_mode', '-')))} · {dist_safe} km · {html.escape(str(item.get('calories_kcal', '-')))} kcal</div>"
+                    # 페이스 — 별도 줄, 강조 색상
+                    f"<div style='margin-top:0.25rem;font-size:0.92rem;color:#0f766e;font-weight:600;'>"
+                    f"⏱ 페이스 {pace_safe}</div>"
                     f"<div style='margin-top:0.35rem;color:#334155;font-size:0.9rem;'>"
                     f"📍 {html.escape(spots_txt)}</div>"
                     + (
                         f"<div style='margin-top:0.25rem;font-size:0.85rem;'>"
                         f"{html.escape(w_badge)}</div>"
-                        if w_badge
-                        else ""
+                        if w_badge else ""
                     )
                     + (
                         f"<div style='margin-top:0.45rem;padding:0.45rem 0.6rem;"
                         f"background:#f0fdfa;border-radius:8px;font-size:0.88rem;'>"
                         f"💬 {memo_safe}</div>"
-                        if item.get("memo")
-                        else ""
+                        if item.get("memo") else ""
                     )
                     + "</div>",
                     unsafe_allow_html=True,
@@ -1107,16 +1476,9 @@ with tab_journal:
         with st.form("manual_run_entry", clear_on_submit=True):
             c_date, c_time = st.columns(2)
             with c_date:
-                picked = st.date_input(
-                    "날짜",
-                    value=sel_d,
-                    key="manual_run_date",
-                )
+                picked = st.date_input("날짜", value=sel_d, key="manual_run_date")
             with c_time:
-                run_time = st.time_input(
-                    "시각",
-                    value=dt_time(12, 0),
-                )
+                run_time = st.time_input("시각", value=dt_time(12, 0))
             dist_f = st.number_input("거리 (km)", 0.1, 100.0, 5.0, 0.1)
             mode_f = st.radio("형태", ["편도", "왕복"], horizontal=True)
             pace_f = st.text_input("페이스 (선택)", placeholder="예: 5:30/km")
@@ -1124,38 +1486,38 @@ with tab_journal:
             memo_f = st.text_input("메모 (선택)")
             submitted = st.form_submit_button("기록 추가", type="primary")
 
-        if submitted:
-            raw_pace = pace_f.strip()
-            p_str = "-"
-            pace_ok = True
-            if raw_pace:
-                pm = pace_to_minutes(raw_pace)
-                if pm is None:
-                    st.error("페이스 형식을 확인해 주세요. (예: 5:30 또는 5:30/km)")
-                    pace_ok = False
-                else:
-                    p_str = pace_to_string(pm)
-            if pace_ok:
-                saved_at = f"{picked.isoformat()} {run_time.hour:02d}:{run_time.minute:02d}:00"
-                save_history(
-                    username,
-                    {
-                        "saved_at": saved_at,
-                        "route_mode": mode_f,
-                        "distance_km": round(float(dist_f), 2),
-                        "spots": [],
-                        "pace": p_str,
-                        "calories_kcal": estimate_calories(weight_f, float(dist_f)),
-                        "memo": memo_f.strip(),
-                        "weather_snapshot": {},
-                        "manual_entry": True,
-                    },
-                )
-                st.session_state["cal_selected"] = picked.isoformat()
-                st.session_state["cal_y"] = picked.year
-                st.session_state["cal_m"] = picked.month
-                st.success("기록을 추가했습니다!")
-                st.rerun()
+            if submitted:
+                raw_pace = pace_f.strip()
+                p_str = "-"
+                pace_ok = True
+                if raw_pace:
+                    pm = pace_to_minutes(raw_pace)
+                    if pm is None:
+                        st.error("페이스 형식을 확인해 주세요. (예: 5:30 또는 5:30/km)")
+                        pace_ok = False
+                    else:
+                        p_str = pace_to_string(pm)
+                if pace_ok:
+                    saved_at = f"{picked.isoformat()} {run_time.hour:02d}:{run_time.minute:02d}:00"
+                    save_history(
+                        username,
+                        {
+                            "saved_at": saved_at,
+                            "route_mode": mode_f,
+                            "distance_km": round(float(dist_f), 2),
+                            "spots": [],
+                            "pace": p_str,
+                            "calories_kcal": estimate_calories(weight_f, float(dist_f)),
+                            "memo": memo_f.strip(),
+                            "weather_snapshot": {},
+                            "manual_entry": True,
+                        },
+                    )
+                    st.session_state["cal_selected"] = picked.isoformat()
+                    st.session_state["cal_y"] = picked.year
+                    st.session_state["cal_m"] = picked.month
+                    st.success("기록을 추가했습니다!")
+                    st.rerun()
 
 
 # ════════════════════════════════════════════════════════
@@ -1166,7 +1528,6 @@ with tab_stats:
     history = load_history(username)
     chart_data = build_chart_data(history)
 
-    # 스트릭
     current_streak, best_streak = calc_streak(history)
     sk1, sk2 = st.columns(2)
     with sk1:
@@ -1182,7 +1543,6 @@ with tab_stats:
 
     st.divider()
 
-    # 월간 목표
     goal_data = load_goal(username)
     goal_km = goal_data.get("monthly_km", 50.0)
     gc1, gc2 = st.columns([2, 1])
@@ -1254,3 +1614,126 @@ with tab_favs:
                     delete_favorite(username, i)
                     st.rerun()
             st.divider()
+
+
+# ════════════════════════════════════════════════════════
+# 탭 6: 친구
+# ════════════════════════════════════════════════════════
+with tab_friends:
+    st.subheader("👥 러닝 친구")
+
+    # ── 친구 추가 ──
+    with st.container():
+        st.markdown(
+            "<div style='background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;"
+            "padding:1rem 1.1rem;margin-bottom:1rem;'>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("#### 🔍 친구 추가")
+        col_inp, col_btn = st.columns([3, 1])
+        with col_inp:
+            friend_search = st.text_input(
+                "아이디로 친구 찾기",
+                placeholder="친구의 아이디를 입력하세요",
+                label_visibility="collapsed",
+                key="friend_search_input",
+            )
+        with col_btn:
+            add_clicked = st.button("친구 추가", type="primary", use_container_width=True)
+
+        if add_clicked:
+            if friend_search.strip():
+                ok, msg = add_friend(username, friend_search.strip())
+                if ok:
+                    st.success(f"✅ {msg}")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {msg}")
+            else:
+                st.warning("아이디를 입력해주세요.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── 친구 목록 ──
+    friends = get_friends(username)
+
+    if not friends:
+        st.markdown(
+            "<div style='text-align:center;padding:2.5rem 1rem;color:#94a3b8;'>"
+            "<div style='font-size:3rem;margin-bottom:0.75rem;'>👟</div>"
+            "<div style='font-size:1rem;font-weight:600;'>아직 친구가 없어요</div>"
+            "<div style='font-size:0.85rem;margin-top:0.3rem;'>위에서 친구를 추가해보세요!</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(f"**총 {len(friends)}명의 러닝 친구**")
+        st.markdown("")
+
+        for fid in friends:
+            # 친구 통계
+            f_history = load_history(fid)
+            f_total = sum(h.get("distance_km", 0) for h in f_history)
+            f_count = len(f_history)
+            f_streak, _ = calc_streak(f_history)
+
+            # 아바타 이니셜
+            initial = fid[0].upper() if fid else "?"
+
+            col_card, col_del = st.columns([6, 1])
+            with col_card:
+                st.markdown(
+                    f"<div class='friend-card'>"
+                    f"<div class='friend-avatar'>{html.escape(initial)}</div>"
+                    f"<div class='friend-info'>"
+                    f"<div class='friend-name'>@{html.escape(fid)}</div>"
+                    f"<div class='friend-stats'>"
+                    f"🏃 총 {f_total:.1f} km &nbsp;·&nbsp; "
+                    f"📅 {f_count}회 &nbsp;·&nbsp; "
+                    f"🔥 {f_streak}일 연속"
+                    f"</div>"
+                    f"</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            with col_del:
+                st.markdown("<div style='margin-top:0.6rem;'>", unsafe_allow_html=True)
+                if st.button("삭제", key=f"del_friend_{fid}", help=f"{fid} 친구 삭제"):
+                    remove_friend(username, fid)
+                    st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
+
+    st.divider()
+
+    # ── 앱 내 전체 사용자 검색 힌트 ──
+    all_users = load_users()
+    other_users = [u for u in all_users.keys() if u != username and u not in friends]
+    if other_users:
+        st.markdown("#### 💡 알 수도 있는 러너")
+        st.caption("같은 앱을 사용 중인 다른 러너들이에요.")
+        shown = other_users[:5]
+        for uid in shown:
+            u_history = load_history(uid)
+            u_total = sum(h.get("distance_km", 0) for h in u_history)
+            initial = uid[0].upper()
+            col_u, col_add = st.columns([5, 1])
+            with col_u:
+                st.markdown(
+                    f"<div class='friend-card' style='border-color:#cbd5e1;background:#f8fafc;'>"
+                    f"<div class='friend-avatar' style='background:linear-gradient(135deg,#475569,#64748b);'>"
+                    f"{html.escape(initial)}</div>"
+                    f"<div class='friend-info'>"
+                    f"<div class='friend-name'>@{html.escape(uid)}</div>"
+                    f"<div class='friend-stats'>🏃 총 {u_total:.1f} km</div>"
+                    f"</div></div>",
+                    unsafe_allow_html=True,
+                )
+            with col_add:
+                st.markdown("<div style='margin-top:0.6rem;'>", unsafe_allow_html=True)
+                if st.button("추가", key=f"quick_add_{uid}", type="primary"):
+                    ok, msg = add_friend(username, uid)
+                    if ok:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+                st.markdown("</div>", unsafe_allow_html=True)
